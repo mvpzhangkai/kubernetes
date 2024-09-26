@@ -10,7 +10,7 @@ programs. E.g. these packages are vendored into `k8s.io/kubernetes` for use in
 the [kubectl](https://github.com/kubernetes/kubernetes/tree/master/cmd/kubectl)
 cli client. That client will eventually move here too.
 
-# Contribution Requirements
+## Contribution Requirements
 
 - Full unit-test coverage.
 
@@ -19,7 +19,7 @@ cli client. That client will eventually move here too.
 
 - No dependence on `k8s.io/kubernetes`. Dependence on other repositories is fine.
 
-- Code must be usefully [commented](https://golang.org/doc/effective_go.html#commentary).
+- Code must be usefully [commented](https://go.dev/doc/effective_go#commentary).
   Not only for developers on the project, but also for external users of these packages.
 
 - When reviewing PRs, you are encouraged to use Golang's [code review
@@ -28,11 +28,6 @@ cli client. That client will eventually move here too.
 - Packages in this repository should aspire to implement sensible, small
   interfaces and import a limited set of dependencies.
 
-## Dependencies
-
-Dependencies are managed using [dep](https://github.com/golang/dep). Please
-refer to its documentation if needed.
-
 ## Community, discussion, contribution, and support
 
 See [this document](https://github.com/kubernetes/community/tree/master/sig-cli) for how to reach the maintainers of this project.
@@ -40,3 +35,4 @@ See [this document](https://github.com/kubernetes/community/tree/master/sig-cli)
 ### Code of conduct
 
 Participation in the Kubernetes community is governed by the [Kubernetes Code of Conduct](code-of-conduct.md).
+

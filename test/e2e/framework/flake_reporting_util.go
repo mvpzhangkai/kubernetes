@@ -20,8 +20,6 @@ import (
 	"bytes"
 	"fmt"
 	"sync"
-
-	e2elog "k8s.io/kubernetes/test/e2e/framework/log"
 )
 
 // FlakeReport is a struct for managing the flake report.
@@ -55,11 +53,11 @@ func (f *FlakeReport) RecordFlakeIfError(err error, optionalDescription ...inter
 		return
 	}
 	msg := fmt.Sprintf("Unexpected error occurred: %v", err)
-	desc := buildDescription(optionalDescription)
+	desc := buildDescription(optionalDescription...)
 	if desc != "" {
 		msg = fmt.Sprintf("%v (Description: %v)", msg, desc)
 	}
-	e2elog.Logf(msg)
+	Logf("%s", msg)
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	f.Flakes = append(f.Flakes, msg)

@@ -32,11 +32,21 @@ func isSupportedQoSComputeResource(name v1.ResourceName) bool {
 	return supportedQoSComputeResources.Has(string(name))
 }
 
-// GetPodQOS returns the QoS class of a pod.
+// GetPodQOS returns the QoS class of a pod persisted in the PodStatus.QOSClass field.
+// If PodStatus.QOSClass is empty, it returns value of ComputePodQOS() which evaluates pod's QoS class.
+func GetPodQOS(pod *v1.Pod) v1.PodQOSClass {
+	if pod.Status.QOSClass != "" {
+		return pod.Status.QOSClass
+	}
+	return ComputePodQOS(pod)
+}
+
+// ComputePodQOS evaluates the list of containers to determine a pod's QoS class. This function is more
+// expensive than GetPodQOS which should be used for pods having a non-empty .Status.QOSClass.
 // A pod is besteffort if none of its containers have specified any requests or limits.
 // A pod is guaranteed only when requests and limits are specified for all the containers and they are equal.
 // A pod is burstable if limits and requests do not match across all containers.
-func GetPodQOS(pod *v1.Pod) v1.PodQOSClass {
+func ComputePodQOS(pod *v1.Pod) v1.PodQOSClass {
 	requests := v1.ResourceList{}
 	limits := v1.ResourceList{}
 	zeroQuantity := resource.MustParse("0")
@@ -51,12 +61,12 @@ func GetPodQOS(pod *v1.Pod) v1.PodQOSClass {
 				continue
 			}
 			if quantity.Cmp(zeroQuantity) == 1 {
-				delta := quantity.Copy()
+				delta := quantity.DeepCopy()
 				if _, exists := requests[name]; !exists {
-					requests[name] = *delta
+					requests[name] = delta
 				} else {
 					delta.Add(requests[name])
-					requests[name] = *delta
+					requests[name] = delta
 				}
 			}
 		}
@@ -68,12 +78,12 @@ func GetPodQOS(pod *v1.Pod) v1.PodQOSClass {
 			}
 			if quantity.Cmp(zeroQuantity) == 1 {
 				qosLimitsFound.Insert(string(name))
-				delta := quantity.Copy()
+				delta := quantity.DeepCopy()
 				if _, exists := limits[name]; !exists {
-					limits[name] = *delta
+					limits[name] = delta
 				} else {
 					delta.Add(limits[name])
-					limits[name] = *delta
+					limits[name] = delta
 				}
 			}
 		}

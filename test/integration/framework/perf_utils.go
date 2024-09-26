@@ -17,14 +17,16 @@ limitations under the License.
 package framework
 
 import (
-	"k8s.io/api/core/v1"
+	"context"
+	"fmt"
+
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/rand"
 	clientset "k8s.io/client-go/kubernetes"
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
+	"k8s.io/klog/v2"
 	testutils "k8s.io/kubernetes/test/utils"
-
-	"k8s.io/klog"
 )
 
 const (
@@ -36,6 +38,7 @@ type IntegrationTestNodePreparer struct {
 	client          clientset.Interface
 	countToStrategy []testutils.CountToStrategy
 	nodeNamePrefix  string
+	nodeSpec        *v1.Node
 }
 
 // NewIntegrationTestNodePreparer creates an IntegrationTestNodePreparer configured with defaults.
@@ -47,8 +50,17 @@ func NewIntegrationTestNodePreparer(client clientset.Interface, countToStrategy 
 	}
 }
 
+// NewIntegrationTestNodePreparerWithNodeSpec creates an IntegrationTestNodePreparer configured with nodespec.
+func NewIntegrationTestNodePreparerWithNodeSpec(client clientset.Interface, countToStrategy []testutils.CountToStrategy, nodeSpec *v1.Node) testutils.TestNodePreparer {
+	return &IntegrationTestNodePreparer{
+		client:          client,
+		countToStrategy: countToStrategy,
+		nodeSpec:        nodeSpec,
+	}
+}
+
 // PrepareNodes prepares countToStrategy test nodes.
-func (p *IntegrationTestNodePreparer) PrepareNodes() error {
+func (p *IntegrationTestNodePreparer) PrepareNodes(ctx context.Context, nextNodeIndex int) error {
 	numNodes := 0
 	for _, v := range p.countToStrategy {
 		numNodes += v.Count
@@ -71,28 +83,46 @@ func (p *IntegrationTestNodePreparer) PrepareNodes() error {
 			},
 		},
 	}
+
+	if p.nodeSpec != nil {
+		baseNode = p.nodeSpec
+	}
+
 	for i := 0; i < numNodes; i++ {
 		var err error
 		for retry := 0; retry < retries; retry++ {
-			_, err = p.client.CoreV1().Nodes().Create(baseNode)
-			if err == nil || !testutils.IsRetryableAPIError(err) {
+			// Create nodes with the usual kubernetes.io/hostname label.
+			// For that we need to know the name in advance, if we want to
+			// do it in one request.
+			node := baseNode.DeepCopy()
+			name := node.Name
+			if name == "" {
+				name = node.GenerateName + rand.String(5)
+				node.Name = name
+			}
+			if node.Labels == nil {
+				node.Labels = make(map[string]string)
+			}
+			node.Labels["kubernetes.io/hostname"] = name
+			_, err = p.client.CoreV1().Nodes().Create(ctx, node, metav1.CreateOptions{})
+			if err == nil {
 				break
 			}
 		}
 		if err != nil {
-			klog.Fatalf("Error creating node: %v", err)
+			return fmt.Errorf("creating node: %w", err)
 		}
 	}
 
-	nodes := e2eframework.GetReadySchedulableNodesOrDie(p.client)
-	index := 0
-	sum := 0
+	nodes, err := waitListAllNodes(p.client)
+	if err != nil {
+		return fmt.Errorf("listing nodes: %w", err)
+	}
+	index := nextNodeIndex
 	for _, v := range p.countToStrategy {
-		sum += v.Count
-		for ; index < sum; index++ {
-			if err := testutils.DoPrepareNode(p.client, &nodes.Items[index], v.Strategy); err != nil {
-				klog.Errorf("Aborting node preparation: %v", err)
-				return err
+		for i := 0; i < v.Count; i, index = i+1, index+1 {
+			if err := testutils.DoPrepareNode(ctx, p.client, &nodes.Items[index], v.Strategy); err != nil {
+				return fmt.Errorf("aborting node preparation: %w", err)
 			}
 		}
 	}
@@ -100,12 +130,19 @@ func (p *IntegrationTestNodePreparer) PrepareNodes() error {
 }
 
 // CleanupNodes deletes existing test nodes.
-func (p *IntegrationTestNodePreparer) CleanupNodes() error {
-	nodes := e2eframework.GetReadySchedulableNodesOrDie(p.client)
+func (p *IntegrationTestNodePreparer) CleanupNodes(ctx context.Context) error {
+	// TODO(#93794): make CleanupNodes only clean up the nodes created by this
+	// IntegrationTestNodePreparer to make this more intuitive.
+	nodes, err := waitListAllNodes(p.client)
+	if err != nil {
+		klog.Fatalf("Error listing nodes: %v", err)
+	}
+	var errRet error
 	for i := range nodes.Items {
-		if err := p.client.CoreV1().Nodes().Delete(nodes.Items[i].Name, &metav1.DeleteOptions{}); err != nil {
+		if err := p.client.CoreV1().Nodes().Delete(ctx, nodes.Items[i].Name, metav1.DeleteOptions{}); err != nil {
 			klog.Errorf("Error while deleting Node: %v", err)
+			errRet = err
 		}
 	}
-	return nil
+	return errRet
 }

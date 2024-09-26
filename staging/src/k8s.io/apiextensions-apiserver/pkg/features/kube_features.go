@@ -28,37 +28,19 @@ const (
 	// // alpha: v1.4
 	// MyFeature() bool
 
-	// owner: @sttts, @nikhita
-	// alpha: v1.8
-	// beta: v1.9
+	// owner: @alexzielenski
+	// alpha: v1.28
 	//
-	// CustomResourceValidation is a list of validation methods for CustomResources
-	CustomResourceValidation featuregate.Feature = "CustomResourceValidation"
+	// Ignores errors raised on unchanged fields of Custom Resources
+	// across UPDATE/PATCH requests.
+	CRDValidationRatcheting featuregate.Feature = "CRDValidationRatcheting"
 
-	// owner: @roycaihw, @sttts
-	// alpha: v1.14
+	// owner: @jpbetz
+	// alpha: v1.30
 	//
-	// CustomResourcePublishOpenAPI enables publishing of CRD OpenAPI specs.
-	CustomResourcePublishOpenAPI featuregate.Feature = "CustomResourcePublishOpenAPI"
-
-	// owner: @sttts, @nikhita
-	// alpha: v1.10
-	// beta: v1.11
-	//
-	// CustomResourceSubresources defines the subresources for CustomResources
-	CustomResourceSubresources featuregate.Feature = "CustomResourceSubresources"
-
-	// owner: @mbohlool, @roycaihw
-	// alpha: v1.13
-	//
-	// CustomResourceWebhookConversion defines the webhook conversion for Custom Resources.
-	CustomResourceWebhookConversion featuregate.Feature = "CustomResourceWebhookConversion"
-
-	// owner: @sttts
-	// alpha: v1.15
-	//
-	// CustomResourceDefaulting enables OpenAPI defaulting in CustomResources.
-	CustomResourceDefaulting featuregate.Feature = "CustomResourceDefaulting"
+	// CustomResourceDefinitions may include SelectableFields to declare which fields
+	// may be used as field selectors.
+	CustomResourceFieldSelectors featuregate.Feature = "CustomResourceFieldSelectors"
 )
 
 func init() {
@@ -69,9 +51,6 @@ func init() {
 // To add a new feature, define a key for it above and add it here. The features will be
 // available throughout Kubernetes binaries.
 var defaultKubernetesFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
-	CustomResourceValidation:        {Default: true, PreRelease: featuregate.Beta},
-	CustomResourceSubresources:      {Default: true, PreRelease: featuregate.Beta},
-	CustomResourceWebhookConversion: {Default: true, PreRelease: featuregate.Beta},
-	CustomResourcePublishOpenAPI:    {Default: true, PreRelease: featuregate.Beta},
-	CustomResourceDefaulting:        {Default: false, PreRelease: featuregate.Alpha},
+	CRDValidationRatcheting:      {Default: true, PreRelease: featuregate.Beta},
+	CustomResourceFieldSelectors: {Default: true, PreRelease: featuregate.Beta},
 }

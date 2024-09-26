@@ -21,7 +21,7 @@ import (
 	"sort"
 	"sync"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // All registered credential providers.
@@ -30,9 +30,10 @@ var providers = make(map[string]DockerConfigProvider)
 
 // RegisterCredentialProvider is called by provider implementations on
 // initialization to register themselves, like so:
-//   func init() {
-//    	RegisterCredentialProvider("name", &myProvider{...})
-//   }
+//
+//	func init() {
+//	 	RegisterCredentialProvider("name", &myProvider{...})
+//	}
 func RegisterCredentialProvider(name string, provider DockerConfigProvider) {
 	providersMutex.Lock()
 	defer providersMutex.Unlock()

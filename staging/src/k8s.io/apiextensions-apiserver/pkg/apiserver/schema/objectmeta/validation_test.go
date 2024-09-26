@@ -171,11 +171,9 @@ func TestValidate(t *testing.T) {
 						},
 					},
 					"additionalProperties": {
-						Generic: structuralschema.Generic{
-							AdditionalProperties: &structuralschema.StructuralOrBool{
-								Structural: &structuralschema.Structural{
-									Extensions: structuralschema.Extensions{XEmbeddedResource: true},
-								},
+						AdditionalProperties: &structuralschema.StructuralOrBool{
+							Structural: &structuralschema.Structural{
+								Extensions: structuralschema.Extensions{XEmbeddedResource: true},
 							},
 						},
 					},
@@ -224,18 +222,6 @@ func required(path ...string) validationMatch {
 }
 func invalid(path ...string) validationMatch {
 	return validationMatch{path: field.NewPath(path[0], path[1:]...), errorType: field.ErrorTypeInvalid}
-}
-func invalidIndex(index int, path ...string) validationMatch {
-	return validationMatch{path: field.NewPath(path[0], path[1:]...).Index(index), errorType: field.ErrorTypeInvalid}
-}
-func unsupported(path ...string) validationMatch {
-	return validationMatch{path: field.NewPath(path[0], path[1:]...), errorType: field.ErrorTypeNotSupported}
-}
-func immutable(path ...string) validationMatch {
-	return validationMatch{path: field.NewPath(path[0], path[1:]...), errorType: field.ErrorTypeInvalid}
-}
-func forbidden(path ...string) validationMatch {
-	return validationMatch{path: field.NewPath(path[0], path[1:]...), errorType: field.ErrorTypeForbidden}
 }
 
 func (v validationMatch) matches(err *field.Error) bool {

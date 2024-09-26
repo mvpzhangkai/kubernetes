@@ -20,9 +20,11 @@ import (
 	"fmt"
 
 	"github.com/pkg/errors"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
+
 	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
 	"k8s.io/kubernetes/cmd/kubeadm/app/cmd/options"
 	"k8s.io/kubernetes/cmd/kubeadm/app/cmd/phases/workflow"
@@ -43,12 +45,12 @@ var (
 
 	uploadKubeadmConfigExample = cmdutil.Examples(`
 		# upload the configuration of your cluster
-		kubeadm init phase upload-config --config=myConfig.yaml
+		kubeadm init phase upload-config kubeadm --config=myConfig.yaml
 		`)
 
 	uploadKubeletConfigLongDesc = cmdutil.LongDesc(`
-		Upload kubelet configuration extracted from the kubeadm InitConfiguration object to a ConfigMap
-		of the form kubelet-config-1.X in the cluster, where X is the minor version of the current (API Server) Kubernetes version.
+		Upload the kubelet configuration extracted from the kubeadm InitConfiguration object
+		to a kubelet-config ConfigMap in the cluster
 		`)
 
 	uploadKubeletConfigExample = cmdutil.Examples(`
@@ -63,7 +65,6 @@ func NewUploadConfigPhase() workflow.Phase {
 		Name:    "upload-config",
 		Aliases: []string{"uploadconfig"},
 		Short:   "Upload the kubeadm and kubelet configuration to a ConfigMap",
-		Long:    cmdutil.MacroCommandLongDescription,
 		Phases: []workflow.Phase{
 			{
 				Name:           "all",
@@ -94,7 +95,9 @@ func NewUploadConfigPhase() workflow.Phase {
 func getUploadConfigPhaseFlags() []string {
 	return []string{
 		options.CfgPath,
+		options.NodeCRISocket,
 		options.KubeconfigPath,
+		options.DryRun,
 	}
 }
 
@@ -120,7 +123,7 @@ func runUploadKubeletConfig(c workflow.RunData) error {
 	}
 
 	klog.V(1).Infoln("[upload-config] Uploading the kubelet component config to a ConfigMap")
-	if err = kubeletphase.CreateConfigMap(cfg.ClusterConfiguration.ComponentConfigs.Kubelet, cfg.KubernetesVersion, client); err != nil {
+	if err = kubeletphase.CreateConfigMap(&cfg.ClusterConfiguration, client); err != nil {
 		return errors.Wrap(err, "error creating kubelet configuration ConfigMap")
 	}
 

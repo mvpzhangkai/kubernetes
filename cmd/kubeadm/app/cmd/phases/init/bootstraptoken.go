@@ -56,6 +56,7 @@ func NewBootstrapTokenPhase() workflow.Phase {
 			options.CfgPath,
 			options.KubeconfigPath,
 			options.SkipTokenPrint,
+			options.DryRun,
 		},
 		Run: runBootstrapToken,
 	}
@@ -85,6 +86,10 @@ func runBootstrapToken(c workflow.RunData) error {
 	// Create the default node bootstrap token
 	if err := nodebootstraptokenphase.UpdateOrCreateTokens(client, false, data.Cfg().BootstrapTokens); err != nil {
 		return errors.Wrap(err, "error updating or creating token")
+	}
+	// Create RBAC rules that makes the bootstrap tokens able to get nodes
+	if err := nodebootstraptokenphase.AllowBootstrapTokensToGetNodes(client); err != nil {
+		return errors.Wrap(err, "error allowing bootstrap tokens to get Nodes")
 	}
 	// Create RBAC rules that makes the bootstrap tokens able to post CSRs
 	if err := nodebootstraptokenphase.AllowBootstrapTokensToPostCSRs(client); err != nil {

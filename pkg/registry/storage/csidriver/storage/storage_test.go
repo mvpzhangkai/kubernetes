@@ -38,20 +38,29 @@ func newStorage(t *testing.T) (*REST, *etcd3testing.EtcdTestServer) {
 		DeleteCollectionWorkers: 1,
 		ResourcePrefix:          "csidrivers",
 	}
-	csiDriverStorage := NewStorage(restOptions)
+	csiDriverStorage, err := NewStorage(restOptions)
+	if err != nil {
+		t.Fatalf("unexpected error from REST storage: %v", err)
+	}
 	return csiDriverStorage.CSIDriver, server
 }
 
 func validNewCSIDriver(name string) *storageapi.CSIDriver {
 	attachRequired := true
 	podInfoOnMount := true
+	requiresRepublish := true
+	storageCapacity := true
+	seLinuxMount := true
 	return &storageapi.CSIDriver{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
 		Spec: storageapi.CSIDriverSpec{
-			AttachRequired: &attachRequired,
-			PodInfoOnMount: &podInfoOnMount,
+			AttachRequired:    &attachRequired,
+			PodInfoOnMount:    &podInfoOnMount,
+			RequiresRepublish: &requiresRepublish,
+			StorageCapacity:   &storageCapacity,
+			SELinuxMount:      &seLinuxMount,
 		},
 	}
 }
@@ -65,6 +74,9 @@ func TestCreate(t *testing.T) {
 	csiDriver.ObjectMeta = metav1.ObjectMeta{GenerateName: "foo"}
 	attachNotRequired := false
 	notPodInfoOnMount := false
+	notRequiresRepublish := false
+	notStorageCapacity := false
+	notSELinuxMount := false
 	test.TestCreate(
 		// valid
 		csiDriver,
@@ -72,8 +84,11 @@ func TestCreate(t *testing.T) {
 		&storageapi.CSIDriver{
 			ObjectMeta: metav1.ObjectMeta{Name: "*BadName!"},
 			Spec: storageapi.CSIDriverSpec{
-				AttachRequired: &attachNotRequired,
-				PodInfoOnMount: &notPodInfoOnMount,
+				AttachRequired:    &attachNotRequired,
+				PodInfoOnMount:    &notPodInfoOnMount,
+				RequiresRepublish: &notRequiresRepublish,
+				StorageCapacity:   &notStorageCapacity,
+				SELinuxMount:      &notSELinuxMount,
 			},
 		},
 	)

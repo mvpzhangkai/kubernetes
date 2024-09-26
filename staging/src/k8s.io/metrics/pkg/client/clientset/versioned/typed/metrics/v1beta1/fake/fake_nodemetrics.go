@@ -19,9 +19,10 @@ limitations under the License.
 package fake
 
 import (
+	context "context"
+
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
 	v1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
@@ -32,26 +33,28 @@ type FakeNodeMetricses struct {
 	Fake *FakeMetricsV1beta1
 }
 
-var nodemetricsesResource = schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "nodes"}
+var nodemetricsesResource = v1beta1.SchemeGroupVersion.WithResource("nodes")
 
-var nodemetricsesKind = schema.GroupVersionKind{Group: "metrics.k8s.io", Version: "v1beta1", Kind: "NodeMetrics"}
+var nodemetricsesKind = v1beta1.SchemeGroupVersion.WithKind("NodeMetrics")
 
 // Get takes name of the nodeMetrics, and returns the corresponding nodeMetrics object, and an error if there is any.
-func (c *FakeNodeMetricses) Get(name string, options v1.GetOptions) (result *v1beta1.NodeMetrics, err error) {
+func (c *FakeNodeMetricses) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.NodeMetrics, err error) {
+	emptyResult := &v1beta1.NodeMetrics{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(nodemetricsesResource, name), &v1beta1.NodeMetrics{})
+		Invokes(testing.NewRootGetActionWithOptions(nodemetricsesResource, name, options), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1beta1.NodeMetrics), err
 }
 
 // List takes label and field selectors, and returns the list of NodeMetricses that match those selectors.
-func (c *FakeNodeMetricses) List(opts v1.ListOptions) (result *v1beta1.NodeMetricsList, err error) {
+func (c *FakeNodeMetricses) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.NodeMetricsList, err error) {
+	emptyResult := &v1beta1.NodeMetricsList{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(nodemetricsesResource, nodemetricsesKind, opts), &v1beta1.NodeMetricsList{})
+		Invokes(testing.NewRootListActionWithOptions(nodemetricsesResource, nodemetricsesKind, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 
 	label, _, _ := testing.ExtractFromListOptions(opts)
@@ -68,7 +71,7 @@ func (c *FakeNodeMetricses) List(opts v1.ListOptions) (result *v1beta1.NodeMetri
 }
 
 // Watch returns a watch.Interface that watches the requested nodeMetricses.
-func (c *FakeNodeMetricses) Watch(opts v1.ListOptions) (watch.Interface, error) {
+func (c *FakeNodeMetricses) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(nodemetricsesResource, opts))
+		InvokesWatch(testing.NewRootWatchActionWithOptions(nodemetricsesResource, opts))
 }

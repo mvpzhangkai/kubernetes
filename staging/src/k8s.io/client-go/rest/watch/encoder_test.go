@@ -18,7 +18,7 @@ package versioned_test
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
 	"testing"
 
 	"k8s.io/api/core/v1"
@@ -34,7 +34,7 @@ import (
 
 // getEncoder mimics how k8s.io/client-go/rest.createSerializers creates a encoder
 func getEncoder() runtime.Encoder {
-	jsonSerializer := runtimejson.NewSerializer(runtimejson.DefaultMetaFactory, scheme.Scheme, scheme.Scheme, false)
+	jsonSerializer := runtimejson.NewSerializerWithOptions(runtimejson.DefaultMetaFactory, scheme.Scheme, scheme.Scheme, runtimejson.SerializerOptions{})
 	directCodecFactory := scheme.Codecs.WithoutConversion()
 	return directCodecFactory.EncoderForVersion(jsonSerializer, v1.SchemeGroupVersion)
 }
@@ -70,7 +70,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			continue
 		}
 
-		rc := ioutil.NopCloser(buf)
+		rc := io.NopCloser(buf)
 		decoder := restclientwatch.NewDecoder(streaming.NewDecoder(rc, getDecoder()), getDecoder())
 		event, obj, err := decoder.Decode()
 		if err != nil {

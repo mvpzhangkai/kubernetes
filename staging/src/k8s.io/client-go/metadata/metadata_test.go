@@ -17,23 +17,30 @@ limitations under the License.
 package metadata
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/diff"
 	"k8s.io/client-go/rest"
+	"k8s.io/klog/v2/ktesting"
 )
 
 func TestClient(t *testing.T) {
 	gvr := schema.GroupVersionResource{Group: "group", Version: "v1", Resource: "resource"}
+	statusOK := &metav1.Status{
+		Status: metav1.StatusSuccess,
+		Code:   http.StatusOK,
+	}
 
 	writeJSON := func(t *testing.T, w http.ResponseWriter, obj runtime.Object) {
 		data, err := json.Marshal(obj)
@@ -49,7 +56,7 @@ func TestClient(t *testing.T) {
 	testCases := []struct {
 		name    string
 		handler func(t *testing.T, w http.ResponseWriter, req *http.Request)
-		want    func(t *testing.T, client *Client)
+		want    func(ctx context.Context, t *testing.T, client *Client)
 	}{
 		{
 			name: "GET is able to convert a JSON object to PartialObjectMetadata",
@@ -71,8 +78,8 @@ func TestClient(t *testing.T) {
 					},
 				})
 			},
-			want: func(t *testing.T, client *Client) {
-				obj, err := client.Resource(gvr).Namespace("ns").Get("name", metav1.GetOptions{})
+			want: func(ctx context.Context, t *testing.T, client *Client) {
+				obj, err := client.Resource(gvr).Namespace("ns").Get(ctx, "name", metav1.GetOptions{})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -83,7 +90,7 @@ func TestClient(t *testing.T) {
 					},
 				}
 				if !reflect.DeepEqual(expect, obj) {
-					t.Fatal(diff.ObjectReflectDiff(expect, obj))
+					t.Fatal(cmp.Diff(expect, obj))
 				}
 			},
 		},
@@ -119,8 +126,8 @@ func TestClient(t *testing.T) {
 					},
 				})
 			},
-			want: func(t *testing.T, client *Client) {
-				objs, err := client.Resource(gvr).Namespace("ns").List(metav1.ListOptions{})
+			want: func(ctx context.Context, t *testing.T, client *Client) {
+				objs, err := client.Resource(gvr).Namespace("ns").List(ctx, metav1.ListOptions{})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -140,7 +147,7 @@ func TestClient(t *testing.T) {
 					},
 				}
 				if !reflect.DeepEqual(expect, objs.Items) {
-					t.Fatal(diff.ObjectReflectDiff(expect, objs.Items))
+					t.Fatal(cmp.Diff(expect, objs.Items))
 				}
 			},
 		},
@@ -161,8 +168,8 @@ func TestClient(t *testing.T) {
 					},
 				})
 			},
-			want: func(t *testing.T, client *Client) {
-				obj, err := client.Resource(gvr).Namespace("ns").Get("name", metav1.GetOptions{})
+			want: func(ctx context.Context, t *testing.T, client *Client) {
+				obj, err := client.Resource(gvr).Namespace("ns").Get(ctx, "name", metav1.GetOptions{})
 				if err == nil || !runtime.IsMissingKind(err) {
 					t.Fatal(err)
 				}
@@ -190,8 +197,8 @@ func TestClient(t *testing.T) {
 					},
 				})
 			},
-			want: func(t *testing.T, client *Client) {
-				obj, err := client.Resource(gvr).Namespace("ns").Get("name", metav1.GetOptions{})
+			want: func(ctx context.Context, t *testing.T, client *Client) {
+				obj, err := client.Resource(gvr).Namespace("ns").Get(ctx, "name", metav1.GetOptions{})
 				if err == nil || !runtime.IsMissingVersion(err) {
 					t.Fatal(err)
 				}
@@ -218,13 +225,68 @@ func TestClient(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{},
 				})
 			},
-			want: func(t *testing.T, client *Client) {
-				obj, err := client.Resource(gvr).Namespace("ns").Get("name", metav1.GetOptions{})
+			want: func(ctx context.Context, t *testing.T, client *Client) {
+				obj, err := client.Resource(gvr).Namespace("ns").Get(ctx, "name", metav1.GetOptions{})
 				if err == nil || !strings.Contains(err.Error(), "object does not appear to match the ObjectMeta schema") {
 					t.Fatal(err)
 				}
 				if obj != nil {
 					t.Fatal(obj)
+				}
+			},
+		},
+
+		{
+			name: "Delete fails if DeleteOptions cannot be serialized to JSON",
+			handler: func(t *testing.T, w http.ResponseWriter, req *http.Request) {
+				if req.Header.Get("Content-Type") != runtime.ContentTypeJSON {
+					t.Fatal(req.Header.Get("Content-Type"))
+				}
+				if req.Method != "DELETE" && req.URL.String() != "/apis/group/v1/namespaces/ns/resource/name" {
+					t.Fatal(req.URL.String())
+				}
+				defer req.Body.Close()
+				buf, err := io.ReadAll(req.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !json.Valid(buf) {
+					t.Fatalf("request body is not a valid JSON: %s", buf)
+				}
+				writeJSON(t, w, statusOK)
+			},
+			want: func(ctx context.Context, t *testing.T, client *Client) {
+				err := client.Resource(gvr).Namespace("ns").Delete(ctx, "name", metav1.DeleteOptions{})
+				if err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+
+		{
+			name: "DeleteCollection fails if DeleteOptions cannot be serialized to JSON",
+			handler: func(t *testing.T, w http.ResponseWriter, req *http.Request) {
+				if req.Header.Get("Content-Type") != runtime.ContentTypeJSON {
+					t.Fatal(req.Header.Get("Content-Type"))
+				}
+				if req.Method != "DELETE" && req.URL.String() != "/apis/group/v1/namespaces/ns/resource/name" {
+					t.Fatal(req.URL.String())
+				}
+				defer req.Body.Close()
+				buf, err := io.ReadAll(req.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !json.Valid(buf) {
+					t.Fatalf("request body is not a valid JSON: %s", buf)
+				}
+
+				writeJSON(t, w, statusOK)
+			},
+			want: func(ctx context.Context, t *testing.T, client *Client) {
+				err := client.Resource(gvr).Namespace("ns").DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
+				if err != nil {
+					t.Fatal(err)
 				}
 			},
 		},
@@ -235,9 +297,10 @@ func TestClient(t *testing.T) {
 			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) { tt.handler(t, w, req) }))
 			defer s.Close()
 
+			_, ctx := ktesting.NewTestContext(t)
 			cfg := ConfigFor(&rest.Config{Host: s.URL})
-			client := NewConfigOrDie(cfg).(*Client)
-			tt.want(t, client)
+			client := NewForConfigOrDie(cfg).(*Client)
+			tt.want(ctx, t, client)
 		})
 	}
 }

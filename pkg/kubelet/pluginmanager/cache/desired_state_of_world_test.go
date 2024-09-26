@@ -18,6 +18,8 @@ package cache
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // Calls AddOrUpdatePlugin() to add a plugin
@@ -26,7 +28,7 @@ import (
 func Test_DSW_AddOrUpdatePlugin_Positive_NewPlugin(t *testing.T) {
 	dsw := NewDesiredStateOfWorld()
 	socketPath := "/var/lib/kubelet/device-plugins/test-plugin.sock"
-	err := dsw.AddOrUpdatePlugin(socketPath, false /* foundInDeprecatedDir */)
+	err := dsw.AddOrUpdatePlugin(socketPath)
 	// Assert
 	if err != nil {
 		t.Fatalf("AddOrUpdatePlugin failed. Expected: <no error> Actual: <%v>", err)
@@ -54,7 +56,7 @@ func Test_DSW_AddOrUpdatePlugin_Positive_ExistingPlugin(t *testing.T) {
 	dsw := NewDesiredStateOfWorld()
 	socketPath := "/var/lib/kubelet/device-plugins/test-plugin.sock"
 	// Adding the plugin for the first time
-	err := dsw.AddOrUpdatePlugin(socketPath, false /* foundInDeprecatedDir */)
+	err := dsw.AddOrUpdatePlugin(socketPath)
 	if err != nil {
 		t.Fatalf("AddOrUpdatePlugin failed. Expected: <no error> Actual: <%v>", err)
 	}
@@ -67,10 +69,10 @@ func Test_DSW_AddOrUpdatePlugin_Positive_ExistingPlugin(t *testing.T) {
 	if dswPlugins[0].SocketPath != socketPath {
 		t.Fatalf("Expected\n%s\nin desired state of world, but got\n%v\n", socketPath, dswPlugins[0])
 	}
-	oldTimestamp := dswPlugins[0].Timestamp
+	oldUUID := dswPlugins[0].UUID
 
 	// Adding the plugin again so that the timestamp will be updated
-	err = dsw.AddOrUpdatePlugin(socketPath, false /* foundInDeprecatedDir */)
+	err = dsw.AddOrUpdatePlugin(socketPath)
 	if err != nil {
 		t.Fatalf("AddOrUpdatePlugin failed. Expected: <no error> Actual: <%v>", err)
 	}
@@ -82,9 +84,9 @@ func Test_DSW_AddOrUpdatePlugin_Positive_ExistingPlugin(t *testing.T) {
 		t.Fatalf("Expected\n%s\nin desired state of world, but got\n%v\n", socketPath, newDswPlugins[0])
 	}
 
-	// Verify that the new timestamp is newer than the old timestamp
-	if !newDswPlugins[0].Timestamp.After(oldTimestamp) {
-		t.Fatal("New timestamp is not newer than the old timestamp", newDswPlugins[0].Timestamp, oldTimestamp)
+	// Verify that the new UUID is different from the old UUID
+	if newDswPlugins[0].UUID == oldUUID {
+		t.Fatal("New UUID is not different from the old UUID", newDswPlugins[0].UUID, oldUUID)
 	}
 
 }
@@ -95,11 +97,8 @@ func Test_DSW_AddOrUpdatePlugin_Positive_ExistingPlugin(t *testing.T) {
 func Test_DSW_AddOrUpdatePlugin_Negative_PluginMissingInfo(t *testing.T) {
 	dsw := NewDesiredStateOfWorld()
 	socketPath := ""
-	err := dsw.AddOrUpdatePlugin(socketPath, false /* foundInDeprecatedDir */)
-	// Assert
-	if err == nil || err.Error() != "Socket path is empty" {
-		t.Fatalf("AddOrUpdatePlugin failed. Expected: <Socket path is empty> Actual: <%v>", err)
-	}
+	err := dsw.AddOrUpdatePlugin(socketPath)
+	require.EqualError(t, err, "socket path is empty")
 
 	// Get pluginsToRegister and check the newly added plugin is there
 	dswPlugins := dsw.GetPluginsToRegister()
@@ -120,7 +119,7 @@ func Test_DSW_RemovePlugin_Positive(t *testing.T) {
 	// First, add a plugin
 	dsw := NewDesiredStateOfWorld()
 	socketPath := "/var/lib/kubelet/device-plugins/test-plugin.sock"
-	err := dsw.AddOrUpdatePlugin(socketPath, false /* foundInDeprecatedDir */)
+	err := dsw.AddOrUpdatePlugin(socketPath)
 	// Assert
 	if err != nil {
 		t.Fatalf("AddOrUpdatePlugin failed. Expected: <no error> Actual: <%v>", err)

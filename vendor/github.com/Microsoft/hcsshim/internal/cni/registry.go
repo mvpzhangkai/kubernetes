@@ -1,9 +1,11 @@
+//go:build windows
+
 package cni
 
 import (
 	"errors"
 
-	"github.com/Microsoft/hcsshim/internal/guid"
+	"github.com/Microsoft/go-winio/pkg/guid"
 	"github.com/Microsoft/hcsshim/internal/regstate"
 )
 
@@ -84,7 +86,7 @@ func (pnc *PersistedNamespaceConfig) Store() error {
 }
 
 // Remove removes any persisted state associated with this config. If the config
-// is not found in the registery `Remove` returns no error.
+// is not found in the registry `Remove` returns no error.
 func (pnc *PersistedNamespaceConfig) Remove() error {
 	if pnc.stored {
 		sk, err := regstate.Open(cniRoot, false)

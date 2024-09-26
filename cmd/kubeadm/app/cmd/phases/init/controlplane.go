@@ -66,7 +66,6 @@ func NewControlPlanePhase() workflow.Phase {
 	phase := workflow.Phase{
 		Name:  "control-plane",
 		Short: "Generate all static Pod manifest files necessary to establish the control plane",
-		Long:  cmdutil.MacroCommandLongDescription,
 		Phases: []workflow.Phase{
 			{
 				Name:           "all",
@@ -100,6 +99,8 @@ func getControlPlanePhaseFlags(name string) []string {
 		options.CertificatesDir,
 		options.KubernetesVersion,
 		options.ImageRepository,
+		options.Patches,
+		options.DryRun,
 	}
 	if name == "all" || name == kubeadmconstants.KubeAPIServer {
 		flags = append(flags,
@@ -144,6 +145,6 @@ func runControlPlaneSubphase(component string) func(c workflow.RunData) error {
 		cfg := data.Cfg()
 
 		fmt.Printf("[control-plane] Creating static Pod manifest for %q\n", component)
-		return controlplane.CreateStaticPodFiles(data.ManifestDir(), &cfg.ClusterConfiguration, &cfg.LocalAPIEndpoint, component)
+		return controlplane.CreateStaticPodFiles(data.ManifestDir(), data.PatchesDir(), &cfg.ClusterConfiguration, &cfg.LocalAPIEndpoint, data.DryRun(), component)
 	}
 }

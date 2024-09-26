@@ -1,13 +1,16 @@
+//go:build windows
+
 package hns
 
 import (
 	"encoding/json"
+	"errors"
 	"net"
 
 	"github.com/sirupsen/logrus"
 )
 
-// Subnet is assoicated with a network and represents a list
+// Subnet is associated with a network and represents a list
 // of subnets available to the network
 type Subnet struct {
 	AddressPrefix  string            `json:",omitempty"`
@@ -15,7 +18,7 @@ type Subnet struct {
 	Policies       []json.RawMessage `json:",omitempty"`
 }
 
-// MacPool is assoicated with a network and represents a list
+// MacPool is associated with a network and represents a list
 // of macaddresses available to the network
 type MacPool struct {
 	StartMacAddress string `json:",omitempty"`
@@ -37,12 +40,6 @@ type HNSNetwork struct {
 	DNSServerCompartment uint32            `json:",omitempty"`
 	ManagementIP         string            `json:",omitempty"`
 	AutomaticDNS         bool              `json:",omitempty"`
-}
-
-type hnsNetworkResponse struct {
-	Success bool
-	Error   string
-	Output  HNSNetwork
 }
 
 type hnsResponse struct {
@@ -97,6 +94,12 @@ func (network *HNSNetwork) Create() (*HNSNetwork, error) {
 	operation := "Create"
 	title := "hcsshim::HNSNetwork::" + operation
 	logrus.Debugf(title+" id=%s", network.Id)
+
+	for _, subnet := range network.Subnets {
+		if (subnet.AddressPrefix != "") && (subnet.GatewayAddress == "") {
+			return nil, errors.New("network create error, subnet has address prefix but no gateway specified")
+		}
+	}
 
 	jsonString, err := json.Marshal(network)
 	if err != nil {

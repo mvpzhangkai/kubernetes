@@ -28,38 +28,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/kubernetes/pkg/apis/apps"
 	"k8s.io/kubernetes/pkg/apis/core"
+	utilpointer "k8s.io/utils/pointer"
 )
 
 func addConversionFuncs(scheme *runtime.Scheme) error {
-	// Add non-generated conversion functions
-	err := scheme.AddConversionFuncs(
-		Convert_core_Pod_To_v1_Pod,
-		Convert_core_PodSpec_To_v1_PodSpec,
-		Convert_v1_PodStatus_To_core_PodStatus,
-		Convert_core_PodStatus_To_v1_PodStatus,
-		Convert_core_NodeSpec_To_v1_NodeSpec,
-		Convert_v1_NodeSpec_To_core_NodeSpec,
-		Convert_core_ReplicationControllerSpec_To_v1_ReplicationControllerSpec,
-		Convert_core_ServiceSpec_To_v1_ServiceSpec,
-		Convert_v1_Pod_To_core_Pod,
-		Convert_v1_PodSpec_To_core_PodSpec,
-		Convert_v1_ReplicationControllerSpec_To_core_ReplicationControllerSpec,
-		Convert_v1_Secret_To_core_Secret,
-		Convert_v1_ServiceSpec_To_core_ServiceSpec,
-		Convert_v1_ResourceList_To_core_ResourceList,
-		Convert_v1_ReplicationController_To_apps_ReplicaSet,
-		Convert_v1_ReplicationControllerSpec_To_apps_ReplicaSetSpec,
-		Convert_v1_ReplicationControllerStatus_To_apps_ReplicaSetStatus,
-		Convert_apps_ReplicaSet_To_v1_ReplicationController,
-		Convert_apps_ReplicaSetSpec_To_v1_ReplicationControllerSpec,
-		Convert_apps_ReplicaSetStatus_To_v1_ReplicationControllerStatus,
-	)
-	if err != nil {
-		return err
-	}
-
 	// Add field conversion funcs.
-	err = scheme.AddFieldLabelConversionFunc(SchemeGroupVersion.WithKind("Pod"),
+	err := scheme.AddFieldLabelConversionFunc(SchemeGroupVersion.WithKind("Pod"),
 		func(label, value string) (string, string, error) {
 			switch label {
 			case "metadata.name",
@@ -68,8 +42,10 @@ func addConversionFuncs(scheme *runtime.Scheme) error {
 				"spec.restartPolicy",
 				"spec.schedulerName",
 				"spec.serviceAccountName",
+				"spec.hostNetwork",
 				"status.phase",
 				"status.podIP",
+				"status.podIPs",
 				"status.nominatedNodeName":
 				return label, value, nil
 			// This is for backwards compatibility with old v1 clients which send spec.host
@@ -119,6 +95,9 @@ func addConversionFuncs(scheme *runtime.Scheme) error {
 		return err
 	}
 	if err := AddFieldLabelConversionsForSecret(scheme); err != nil {
+		return err
+	}
+	if err := AddFieldLabelConversionsForService(scheme); err != nil {
 		return err
 	}
 	return nil
@@ -279,9 +258,13 @@ func Convert_v1_PodStatus_To_core_PodStatus(in *v1.PodStatus, out *core.PodStatu
 		return err
 	}
 
-	// If both fields (v1.PodIPs and v1.PodIP) are provided, then test v1.PodIP == v1.PodIPs[0]
+	// If both fields (v1.PodIPs and v1.PodIP) are provided and differ, then PodIP is authoritative for compatibility with older kubelets
 	if (len(in.PodIP) > 0 && len(in.PodIPs) > 0) && (in.PodIP != in.PodIPs[0].IP) {
-		return fmt.Errorf("conversion Error: v1.PodIP(%v) != v1.PodIPs[0](%v)", in.PodIP, in.PodIPs[0].IP)
+		out.PodIPs = []core.PodIP{
+			{
+				IP: in.PodIP,
+			},
+		}
 	}
 	// at the this point, autoConvert copied v1.PodIPs -> core.PodIPs
 	// if v1.PodIPs was empty but v1.PodIP is not, then set core.PodIPs[0] with v1.PodIP
@@ -325,6 +308,7 @@ func Convert_core_PodSpec_To_v1_PodSpec(in *core.PodSpec, out *v1.PodSpec, s con
 		out.HostNetwork = in.SecurityContext.HostNetwork
 		out.HostIPC = in.SecurityContext.HostIPC
 		out.ShareProcessNamespace = in.SecurityContext.ShareProcessNamespace
+		out.HostUsers = in.SecurityContext.HostUsers
 	}
 
 	return nil
@@ -347,9 +331,9 @@ func Convert_v1_NodeSpec_To_core_NodeSpec(in *v1.NodeSpec, out *core.NodeSpec, s
 	if err := autoConvert_v1_NodeSpec_To_core_NodeSpec(in, out, s); err != nil {
 		return err
 	}
-	// If both fields (v1.PodCIDRs and v1.PodCIDR) are provided, then test v1.PodCIDR == v1.PodCIDRs[0]
+	// If both fields (v1.PodCIDRs and v1.PodCIDR) are provided and differ, then PodCIDR is authoritative for compatibility with older clients
 	if (len(in.PodCIDR) > 0 && len(in.PodCIDRs) > 0) && (in.PodCIDR != in.PodCIDRs[0]) {
-		return fmt.Errorf("conversion Error: v1.PodCIDR(%v) != v1.CIDRs[0](%v)", in.PodCIDR, in.PodCIDRs[0])
+		out.PodCIDRs = []string{in.PodCIDR}
 	}
 
 	// at the this point, autoConvert copied v1.PodCIDRs -> core.PodCIDRs
@@ -380,6 +364,7 @@ func Convert_v1_PodSpec_To_core_PodSpec(in *v1.PodSpec, out *core.PodSpec, s con
 	out.SecurityContext.HostPID = in.HostPID
 	out.SecurityContext.HostIPC = in.HostIPC
 	out.SecurityContext.ShareProcessNamespace = in.ShareProcessNamespace
+	out.SecurityContext.HostUsers = in.HostUsers
 
 	return nil
 }
@@ -392,6 +377,11 @@ func Convert_v1_Pod_To_core_Pod(in *v1.Pod, out *core.Pod, s conversion.Scope) e
 	// drop init container annotations so they don't show up as differences when receiving requests from old clients
 	out.Annotations = dropInitContainerAnnotations(out.Annotations)
 
+	// Forcing the value of TerminationGracePeriodSeconds to 1 if it is negative.
+	// Just for Pod, not for PodSpec, because we don't want to change the behavior of the PodTemplate.
+	if in.Spec.TerminationGracePeriodSeconds != nil && *in.Spec.TerminationGracePeriodSeconds < 0 {
+		out.Spec.TerminationGracePeriodSeconds = utilpointer.Int64(1)
+	}
 	return nil
 }
 
@@ -404,6 +394,11 @@ func Convert_core_Pod_To_v1_Pod(in *core.Pod, out *v1.Pod, s conversion.Scope) e
 	// remove this once the oldest supported kubelet no longer honors the annotations over the field.
 	out.Annotations = dropInitContainerAnnotations(out.Annotations)
 
+	// Forcing the value of TerminationGracePeriodSeconds to 1 if it is negative.
+	// Just for Pod, not for PodSpec, because we don't want to change the behavior of the PodTemplate.
+	if in.Spec.TerminationGracePeriodSeconds != nil && *in.Spec.TerminationGracePeriodSeconds < 0 {
+		out.Spec.TerminationGracePeriodSeconds = utilpointer.Int64(1)
+	}
 	return nil
 }
 
@@ -457,6 +452,7 @@ func AddFieldLabelConversionsForEvent(scheme *runtime.Scheme) error {
 				"involvedObject.resourceVersion",
 				"involvedObject.fieldPath",
 				"reason",
+				"reportingComponent",
 				"source",
 				"type",
 				"metadata.namespace",
@@ -488,6 +484,21 @@ func AddFieldLabelConversionsForSecret(scheme *runtime.Scheme) error {
 			case "type",
 				"metadata.namespace",
 				"metadata.name":
+				return label, value, nil
+			default:
+				return "", "", fmt.Errorf("field label not supported: %s", label)
+			}
+		})
+}
+
+func AddFieldLabelConversionsForService(scheme *runtime.Scheme) error {
+	return scheme.AddFieldLabelConversionFunc(SchemeGroupVersion.WithKind("Service"),
+		func(label, value string) (string, string, error) {
+			switch label {
+			case "metadata.namespace",
+				"metadata.name",
+				"spec.clusterIP",
+				"spec.type":
 				return label, value, nil
 			default:
 				return "", "", fmt.Errorf("field label not supported: %s", label)
@@ -533,11 +544,13 @@ func dropInitContainerAnnotations(oldAnnotations map[string]string) map[string]s
 }
 
 // Convert_core_PersistentVolumeSpec_To_v1_PersistentVolumeSpec is defined outside the autogenerated file for use by other API packages
+// This is needed because it is referenced from other APIs, but is invisible at code-generation time because of the build tags.
 func Convert_core_PersistentVolumeSpec_To_v1_PersistentVolumeSpec(in *core.PersistentVolumeSpec, out *v1.PersistentVolumeSpec, s conversion.Scope) error {
 	return autoConvert_core_PersistentVolumeSpec_To_v1_PersistentVolumeSpec(in, out, s)
 }
 
 // Convert_v1_PersistentVolumeSpec_To_core_PersistentVolumeSpec is defined outside the autogenerated file for use by other API packages
+// This is needed because it is referenced from other APIs, but is invisible at code-generation time because of the build tags.
 func Convert_v1_PersistentVolumeSpec_To_core_PersistentVolumeSpec(in *v1.PersistentVolumeSpec, out *core.PersistentVolumeSpec, s conversion.Scope) error {
 	return autoConvert_v1_PersistentVolumeSpec_To_core_PersistentVolumeSpec(in, out, s)
 }

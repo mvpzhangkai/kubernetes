@@ -17,9 +17,17 @@ limitations under the License.
 package storage
 
 import (
+	"errors"
 	"fmt"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+)
+
+var (
+	ErrResourceVersionSetOnCreate = errors.New("resourceVersion should not be set on objects to be created")
+	ErrStorageNotReady            = errors.New("storage not ready")
 )
 
 const (
@@ -28,6 +36,7 @@ const (
 	ErrCodeResourceVersionConflicts
 	ErrCodeInvalidObj
 	ErrCodeUnreachable
+	ErrCodeTimeout
 )
 
 var errCodeToMessage = map[int]string{
@@ -36,6 +45,7 @@ var errCodeToMessage = map[int]string{
 	ErrCodeResourceVersionConflicts: "resource version conflicts",
 	ErrCodeInvalidObj:               "invalid object",
 	ErrCodeUnreachable:              "server unreachable",
+	ErrCodeTimeout:                  "request timeout",
 }
 
 func NewKeyNotFoundError(key string, rv int64) *StorageError {
@@ -70,6 +80,14 @@ func NewUnreachableError(key string, rv int64) *StorageError {
 	}
 }
 
+func NewTimeoutError(key, msg string) *StorageError {
+	return &StorageError{
+		Code:               ErrCodeTimeout,
+		Key:                key,
+		AdditionalErrorMsg: msg,
+	}
+}
+
 func NewInvalidObjError(key, msg string) *StorageError {
 	return &StorageError{
 		Code:               ErrCodeInvalidObj,
@@ -95,8 +113,8 @@ func IsNotFound(err error) bool {
 	return isErrCode(err, ErrCodeKeyNotFound)
 }
 
-// IsNodeExist returns true if and only if err is an node already exist error.
-func IsNodeExist(err error) bool {
+// IsExist returns true if and only if err is "key" already exists error.
+func IsExist(err error) bool {
 	return isErrCode(err, ErrCodeKeyExists)
 }
 
@@ -108,6 +126,11 @@ func IsUnreachable(err error) bool {
 // IsConflict returns true if and only if err is a write conflict.
 func IsConflict(err error) bool {
 	return isErrCode(err, ErrCodeResourceVersionConflicts)
+}
+
+// IsRequestTimeout returns true if and only if err indicates that the request has timed out.
+func IsRequestTimeout(err error) bool {
+	return isErrCode(err, ErrCodeTimeout)
 }
 
 // IsInvalidObj returns true if and only if err is invalid error
@@ -167,4 +190,27 @@ func NewInternalError(reason string) InternalError {
 
 func NewInternalErrorf(format string, a ...interface{}) InternalError {
 	return InternalError{fmt.Sprintf(format, a...)}
+}
+
+var tooLargeResourceVersionCauseMsg = "Too large resource version"
+
+// NewTooLargeResourceVersionError returns a timeout error with the given retrySeconds for a request for
+// a minimum resource version that is larger than the largest currently available resource version for a requested resource.
+func NewTooLargeResourceVersionError(minimumResourceVersion, currentRevision uint64, retrySeconds int) error {
+	err := apierrors.NewTimeoutError(fmt.Sprintf("Too large resource version: %d, current: %d", minimumResourceVersion, currentRevision), retrySeconds)
+	err.ErrStatus.Details.Causes = []metav1.StatusCause{
+		{
+			Type:    metav1.CauseTypeResourceVersionTooLarge,
+			Message: tooLargeResourceVersionCauseMsg,
+		},
+	}
+	return err
+}
+
+// IsTooLargeResourceVersion returns true if the error is a TooLargeResourceVersion error.
+func IsTooLargeResourceVersion(err error) bool {
+	if !apierrors.IsTimeout(err) {
+		return false
+	}
+	return apierrors.HasStatusCause(err, metav1.CauseTypeResourceVersionTooLarge)
 }
